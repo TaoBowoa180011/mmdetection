@@ -164,9 +164,9 @@ data = dict(
         type=dataset_type,
         ann_file=[
                 data_root + 'VOC2007/ImageSets/Main/trainval.txt',
-                
+                data_root + 'VOC2012/ImageSets/Main/trainval.txt'
         ],
-        img_prefix=[data_root + 'VOC2007/'],
+        img_prefix=[data_root + 'VOC2007/',data_root + 'VOC2012/'],
         pipeline=train_pipeline)),
     val=dict(
         type=dataset_type,
@@ -196,7 +196,7 @@ log_config = dict(
 total_epochs = 4
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/rrcnn_r50_fpn_1x_voc0712'
+work_dir = '/content/drive/My Drive/rrcnn_checkpoints'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]
