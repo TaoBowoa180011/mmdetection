@@ -12,7 +12,7 @@ from mmdet.core import (assign_and_sample, bbox2roi, bbox2result, multi_apply,bu
 
 import numpy as np
 import pickle
-from ..utils import ConvModule
+from mmdet.ops import ConvModule
 import torch.nn.functional as F
 
 @DETECTORS.register_module
