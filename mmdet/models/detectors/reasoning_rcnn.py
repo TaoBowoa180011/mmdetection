@@ -31,8 +31,10 @@ class ReasoningRCNN(BaseDetector, RPNTestMixin):
                  train_cfg=None,
                  test_cfg=None,
                  pretrained=None,
-                 adj_gt=None,
+                 adj_gta=None,
+                 adj_gtr=None,
                  graph_out_channels=256,
+                 graph_hidden_channels=512,
                  norm_cfg=None,
                  roi_feat_size=7,
                  shared_num_fc=2):
@@ -98,10 +100,39 @@ class ReasoningRCNN(BaseDetector, RPNTestMixin):
                 self.mask_roi_extractor = self.bbox_roi_extractor
 
         self.norm_cfg = norm_cfg
-        if adj_gt is not None:
-            self.adj_gt = pickle.load(open(adj_gt, 'rb'))
-            self.adj_gt = np.float32(self.adj_gt)
-            self.adj_gt = nn.Parameter(torch.from_numpy(self.adj_gt), requires_grad=False)
+         
+        self.graphr_coeffience = nn.Parameter(torch.Tensor([1.00]),requires_grad = False)        
+        self.grapha_coeffience = nn.Parameter(torch.Tensor([0.25]),requires_grad = False)
+        if adj_gta is not None:
+            adj_gta = pickle.load(open(adj_gta, 'rb'))
+            adj_gta = np.float32(adj_gta)
+            adj_gta = adj_gta - np.identity(np.size(adj_gta,0),dtype=np.float32)
+            adj_gta = adj_gta[1:,1:]
+            #normalize
+            adj_gta = torch.from_numpy(adj_gta)
+            adj_gta = F.normalize(adj_gta,p=1,dim=1)
+
+            grapha = torch.zeros(adj_gta.size(0),adj_gta.size(0))
+            grapha =  self.grapha_coeffience * adj_gta + torch.eye(adj_gta.size(0))
+            graph_a = torch.zeros(adj_gta.size(0)+1,adj_gta.size(0)+1)
+            graph_a[1:,1:] = grapha[:,:]
+            self.graph_a = nn.Parameter(graph_a, requires_grad=False)
+            print(self.graph_a)
+        if adj_gtr is not None:
+            adj_gtr = pickle.load(open(adj_gtr, 'rb'))
+            adj_gtr = np.float32(adj_gtr)
+            adj_gtr = adj_gtr - np.identity(np.size(adj_gtr,0),dtype=np.float32)
+            adj_gtr = adj_gtr[1:,1:]
+            adj_gtr = torch.from_numpy(adj_gtr)
+            adj_gtr = F.normalize(adj_gtr,p=1,dim=1)
+
+            graphr = torch.zeros(adj_gtr.size(0),adj_gtr.size(0))
+            graphr =  self.graphr_coeffience * adj_gtr + torch.eye(adj_gtr.size(0))
+            graph_r = torch.zeros(adj_gtr.size(0)+1,adj_gtr.size(0)+1)
+            graph_r[1:,1:] = graphr[:,:]
+            self.graph_r = nn.Parameter(graph_r, requires_grad=False)
+            print(self.graph_r)
+
         # init cmp attention
         self.cmp_attention = nn.ModuleList()
         self.cmp_attention.append(
@@ -109,11 +140,14 @@ class ReasoningRCNN(BaseDetector, RPNTestMixin):
                        3, stride=2, padding=1, norm_cfg=self.norm_cfg, bias=self.norm_cfg is None))
         self.cmp_attention.append(
             nn.Linear(1024 // 16, bbox_head[0]['in_channels'] + 1)) # box_head[0]['in_channels'] = 1024
-        # init graph w
+        # init GCN weights
         self.graph_out_channels = graph_out_channels #256
-        self.graph_weight_fc = nn.Linear(bbox_head[0]['in_channels'] + 1, self.graph_out_channels)
+        self.graph_hidden_channels = graph_hidden_channels#512
+        self.graph_weight_fc1 = nn.Linear(bbox_head[0]['in_channels'] + 1, self.graph_hidden_channels)
+        self.graph_weight_fc2 = nn.Linear(self.graph_hidden_channels, self.graph_out_channels)
         self.relu = nn.ReLU(inplace=True)
-
+        
+        
         # shared upper neck
         in_channels = rpn_head['in_channels']
         if shared_num_fc > 0:
@@ -227,24 +261,26 @@ class ReasoningRCNN(BaseDetector, RPNTestMixin):
     
                 # 2.compute graph attention | matrix multiply([2,1025] , [1025,21]) ->[2,21] ->softmax(1)->[2,21] 
                 attention_map = nn.Softmax(1)(torch.mm(base_feat, torch.transpose(global_semantic_pool, 0, 1)))
-                                                              
-                # 3.adaptive global reasoning  点乘 ([2,21,1] * [1,21,1025] ->[2,21,1025]
-                alpha_em = attention_map.unsqueeze(-1) * torch.mm(self.adj_gt, global_semantic_pool).unsqueeze(0)
-            
-                alpha_em = alpha_em.view(-1, global_semantic_pool.size(-1)) #[42,1025]
                 
-                alpha_em = self.graph_weight_fc(alpha_em) #linear(1025,256)(alpha_em) ->[42,256]
-                alpha_em = self.relu(alpha_em)
-              
-                # enhanced_feat = torch.mm(nn.Softmax(1)(cls_score), alpha_em)
+                GrM= torch.mm(self.graph_r, global_semantic_pool)   # C*D
+                GrMW = self.graph_weight_fc1(GrM)               # C*512      
+                H1 = self.relu(GrMW)                 
+               
+                #               [2,21,1] * [1,21,512] -> [2,21,512]
+                alpha_H1 = attention_map.unsqueeze(-1) * torch.mm(self.graph_a, H1).unsqueeze(0)
+                alpha_H1 = alpha_H1.view(-1, alpha_H1.size(-1)) #[42,512]
+               
+                H2 = self.graph_weight_fc2(alpha_H1)  # 21*256
+                H2 = self.relu(H2) 
+
                 n_classes = bbox_head.fc_cls.weight.size(0) #21
                 # cls_score = fc_cls(bbox_feat) fc_cls=linear(1024,21)(bbox_feat = [1024,1024]) -> [1024,21]
                 # cls_prob = [2,512,21]                 
                 cls_prob = nn.Softmax(1)(cls_score).view(len(img_meta), -1, n_classes) 
                 # bmm([2,512,21],[2,21,256])->[2,512,256]
-                enhanced_feat = torch.bmm(cls_prob, alpha_em.view(len(img_meta), -1, self.graph_out_channels))#[2,512,256]
+                enhanced_feat = torch.bmm(cls_prob, H2.view(len(img_meta), -1, self.graph_out_channels))#[2,512,256]
                 enhanced_feat = enhanced_feat.view(-1, self.graph_out_channels) #[1024,256]
-
+                
             # assign gts and sample proposals
             if self.with_bbox or self.with_mask:
                 bbox_assigner = build_assigner(self.train_cfg.rcnn[i].assigner)
