@@ -12,11 +12,11 @@ from .assign_sampling import (  # isort:skip, avoid recursive imports
     assign_and_sample, build_assigner, build_sampler)
 
 __all__ = [
-    'bbox_overlaps', 'BaseAssigner', 'MaxIoUAssigner', 'AssignResult',
-    'BaseSampler', 'PseudoSampler', 'RandomSampler',
+    'bbox_overlaps', 'BboxOverlaps2D', 'BaseAssigner', 'MaxIoUAssigner',
+    'AssignResult', 'BaseSampler', 'PseudoSampler', 'RandomSampler',
     'InstanceBalancedPosSampler', 'IoUBalancedNegSampler', 'CombinedSampler',
-    'SamplingResult', 'build_assigner', 'build_sampler', 'assign_and_sample',
-    'bbox2delta', 'delta2bbox', 'bbox_flip', 'bbox_mapping',
-    'bbox_mapping_back', 'bbox2roi', 'roi2bbox', 'bbox2result',
-    'distance2bbox', 'bbox_target','RandomSamplerFixnum'
+    'SamplingResult', 'build_assigner', 'build_sampler', 'bbox_flip',
+    'bbox_mapping', 'bbox_mapping_back', 'bbox2roi', 'roi2bbox', 'bbox2result',
+    'distance2bbox', 'build_bbox_coder', 'BaseBBoxCoder', 'PseudoBBoxCoder',
+    'DeltaXYWHBBoxCoder', 'TBLRBBoxCoder', 'CenterRegionAssigner','RandomSamplerFixnum'
 ]
