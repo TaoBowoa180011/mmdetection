@@ -17,5 +17,5 @@ __all__ = [
     'SamplingResult', 'build_assigner', 'build_sampler', 'bbox_flip',
     'bbox_mapping', 'bbox_mapping_back', 'bbox2roi', 'roi2bbox', 'bbox2result',
     'distance2bbox', 'build_bbox_coder', 'BaseBBoxCoder', 'PseudoBBoxCoder',
-    'DeltaXYWHBBoxCoder', 'TBLRBBoxCoder', 'CenterRegionAssigner'
+    'DeltaXYWHBBoxCoder', 'TBLRBBoxCoder', 'CenterRegionAssigner','RandomSamplerFixnum'
 ]
